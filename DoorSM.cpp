@@ -1,4 +1,6 @@
 #include "DoorSM.h"
+#include "PinDefines.h"
+#include <string>
 
 
 // Constructor
@@ -28,6 +30,9 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
       switch(currentState) {
         case DOOR_CLOSED:
             if(isEntry) {
+              // stop motor in free running mode
+              analogWrite(MOTOR_PWM_PIN, 0);
+
                 flags->set(EVENT_CLOSED_FLAG); // report door closed event
                 isEntry = false;
             }
@@ -39,13 +44,18 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
             break;
         case DOOR_OPENING:
             if(isEntry) {
-                // TODO: start motor in the open direction
+              // start motor in opening direction
+              digitalWrite(MOTOR_OPEN_PIN, HIGH);
+              digitalWrite(MOTOR_CLOSE_PIN, LOW);
+              analogWrite(MOTOR_PWM_PIN, OPENING_SPEED);
+
                 doorTimer->changePeriod(OPENING_TIME);
                 doorTimer->start();
                 isEntry = false;
             }
 
             if(flags->test(SWITCH_UPPER_FLAG)) {
+                Serial.println("DoorSM: upper flag was true");
                 transitionTo(DOOR_OPEN);
             } else if(flags->test(COMMAND_CLOSE_FLAG)){ // close door command
                 transitionTo(DOOR_CLOSING);
@@ -55,12 +65,16 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
             }
 
             if(isExit) {
-                // TODO:stop motor
                 doorTimer->stop();
             }
             break;
         case DOOR_OPEN:
             if(isEntry) {
+              // start motor in brake mode
+              digitalWrite(MOTOR_OPEN_PIN, LOW);
+              digitalWrite(MOTOR_CLOSE_PIN, LOW);
+              analogWrite(MOTOR_PWM_PIN, OPENING_SPEED);
+
                 flags->set(EVENT_OPENED_FLAG);
                 isEntry = false;
             }
@@ -70,7 +84,11 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
             break;
         case DOOR_CLOSING:
             if(isEntry) {
-                // TODO: start motor in close direction
+                // start motor in close direction
+                digitalWrite(MOTOR_OPEN_PIN, LOW);
+                digitalWrite(MOTOR_CLOSE_PIN, HIGH);
+                analogWrite(MOTOR_PWM_PIN, OPENING_SPEED);
+
                 doorTimer->changePeriod(CLOSING_TIME);
                 doorTimer->start();
                 isEntry = false;
@@ -111,6 +129,12 @@ void DoorSM::transitionTo(DoorState_t to) {
     currentState = to;
     isEntry = true;
     isExit = true;
+
+    char publishString[10];
+    sprintf(publishString, "%d", to);
+
+    // publish the event
+    Particle.publish("DoorState", publishString);
 }
 
 /*************** TIMER AND INTERRUPT CALLBACKS*********************/

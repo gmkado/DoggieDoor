@@ -1,4 +1,5 @@
 #include "SupervisorSM.h"
+#include <string>
 
 // Constructor
 SupervisorSM::SupervisorSM(int start, int end) {
@@ -77,6 +78,11 @@ void SupervisorSM::transitionTo(SupervisorState_t to) {
     currentState = to;
     isEntry = true;
     isExit = true;
+
+    char publishString[10]; //TODO: is this a memory leak?
+    sprintf(publishString, "%d", to);
+    // publish the event
+    Particle.publish("SupervisorState", publishString);
 }
 
 
