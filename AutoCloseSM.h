@@ -8,12 +8,14 @@
 typedef enum {WAITING_FOR_DOG,
 WAITING_FOR_DOOR_CLOSED,
 WAITING_FOR_DOOR_OPEN,
+WAITING_FOR_ALL_CLEAR,
 HOLDING_DOOR_OPEN,
 SIZE_OF_AUTOCLOSESTATE_ENUM} AutoCloseState_t ;
 
 const std::string AutoCloseStateNames[] = { "WAITING_FOR_DOG",
 "WAITING_FOR_DOOR_CLOSED",
 "WAITING_FOR_DOOR_OPEN",
+"WAITING_FOR_ALL_CLEAR",
 "HOLDING_DOOR_OPEN"};
 
 // statically check that the size of AutoCloseStateNames fits the number of DoorStates
@@ -21,7 +23,7 @@ static_assert(sizeof(AutoCloseStateNames)/sizeof(char*) == SIZE_OF_AUTOCLOSESTAT
 /***************************************************************
  *                  Definitions
  * **************************************************************/
-const uint16_t HOLDING_TIME = 5000;
+const uint16_t HOLDING_TIME = 3000;
 
 /****************************************************************
   					Function Prototypes
@@ -38,6 +40,7 @@ class AutoCloseSM {
     AutoCloseState_t currentState;
     bool isEntry;
     bool isExit;
+    bool upperRelease;
     bool timeoutOccurred;
     void transitionTo(AutoCloseState_t);
     std::unique_ptr<Timer> autoCloseTimer; // use a smart pointer.  This initializes to null, but we reset in DoorSM constructor

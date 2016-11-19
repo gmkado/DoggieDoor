@@ -121,8 +121,8 @@ bool SupervisorSM::isDayTime() {
   return Time.hour() > startHour && Time.hour() < endHour;
 }
 
-void SupervisorSM::setIsAuto(bool b) {
-  isAuto = b;
+void SupervisorSM::setIsAuto(bool isauto) {
+  isAuto = isauto;
 }
 
 bool SupervisorSM::getIsAuto() {

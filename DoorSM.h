@@ -20,10 +20,10 @@ static_assert(sizeof(DoorStateNames)/sizeof(char*) == SIZE_OF_DOORSTATE_ENUM, "s
 /***************************************************************
  *                  Definitions
  * **************************************************************/
-const uint16_t CLOSING_TIME = 1000;
-const uint16_t OPENING_TIME = 2000;
-const uint8_t OPENING_SPEED = 200; // 0 to 255
-const uint8_t CLOSING_SPEED = 200; // 0 to 255
+const uint16_t CLOSING_TIME = 5000;
+const uint16_t OPENING_TIME = 5000;
+const uint8_t OPENING_SPEED = 70; // 0 to 255
+const uint8_t CLOSING_SPEED = 70; // 0 to 255
 /****************************************************************
   					Function Prototypes
 ****************************************************************/
@@ -38,6 +38,7 @@ class DoorSM {
     DoorState_t currentState;
     bool isEntry;
     bool isExit;
+    bool upperRelease;
     bool timeoutOccurred;
     void transitionTo(DoorState_t to);
     std::unique_ptr<Timer> doorTimer; // use a smart pointer.  This initializes to null, but we reset in DoorSM constructor

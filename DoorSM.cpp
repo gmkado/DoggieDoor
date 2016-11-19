@@ -51,17 +51,21 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
 
                 doorTimer->changePeriod(OPENING_TIME);
                 doorTimer->start();
+                upperRelease = false;
                 isEntry = false;
             }
-
-            if(flags->test(SWITCH_UPPER_FLAG)) {
-                Serial.println("DoorSM: upper flag was true");
+            if(!upperRelease && !flags->test(SWITCH_UPPER_FLAG)) {
+                // switch is released
+                upperRelease = true;
+            }
+            if(upperRelease && flags->test(SWITCH_UPPER_FLAG)) {
                 transitionTo(DOOR_OPEN);
             } else if(flags->test(COMMAND_CLOSE_FLAG)){ // close door command
                 transitionTo(DOOR_CLOSING);
             } else if(timeoutOccurred)  {
                 flags->set(FAULT_OPENING_FLAG); // report the timeout
                 timeoutOccurred = false; // clear flag
+                transitionTo(DOOR_OPENING);
             }
 
             if(isExit) {
@@ -87,14 +91,23 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
                 // start motor in close direction
                 digitalWrite(MOTOR_OPEN_PIN, LOW);
                 digitalWrite(MOTOR_CLOSE_PIN, HIGH);
-                analogWrite(MOTOR_PWM_PIN, OPENING_SPEED);
+                analogWrite(MOTOR_PWM_PIN, CLOSING_SPEED);
 
                 doorTimer->changePeriod(CLOSING_TIME);
                 doorTimer->start();
+                upperRelease = false;
                 isEntry = false;
             }
             if(flags->test(SWITCH_LOWER_FLAG)) {
                 transitionTo(DOOR_CLOSED);
+            } if(!upperRelease && !flags->test(SWITCH_UPPER_FLAG)) {
+                // switch is released
+                upperRelease = true;
+            }
+            else if (upperRelease && flags->test(SWITCH_UPPER_FLAG)){
+                // we missed the lower limit switch and got all the way back around to the upper limit switch, go back to door opening
+                flags->set(FAULT_MISSEDCLOSE_FLAG);
+                transitionTo(DOOR_OPENING);
             }else if(flags->test(COMMAND_OPEN_FLAG)) { // open door command
                 transitionTo(DOOR_OPENING);
             }else if(flags->test(SWITCH_BUMPER_FLAG)) {
@@ -103,6 +116,7 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
             }else if(timeoutOccurred) {
                 timeoutOccurred = false; // clear flag
                 flags->set(FAULT_CLOSING_FLAG); // report timeout
+                transitionTo(DOOR_OPENING);
             }
             if(isExit) {
                 // TODO: stop motor
