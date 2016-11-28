@@ -40,7 +40,6 @@ class AutoCloseSM {
     AutoCloseState_t currentState;
     bool isEntry;
     bool isExit;
-    bool upperRelease;
     bool timeoutOccurred;
     void transitionTo(AutoCloseState_t);
     std::unique_ptr<Timer> autoCloseTimer; // use a smart pointer.  This initializes to null, but we reset in DoorSM constructor

@@ -16,13 +16,15 @@ unsigned long pulse_width;
 float inches;
 
 Timer sensorTriggerTimer(1000, sendTrigger, true);
+Timer sendRSSITimer(15*60*1000, publishRSSI);
 DoorSM myDoor;
 SupervisorSM mySupervisor(6, 22); // default to start at 6AM, end at 10PM
 AutoCloseSM myAutoClose;
 
 void setup()
 {
-  Time.zone(-7); // use PST
+  Time.zone(-8); // use PST
+
   Particle.function("getSupState", getSupState);
   Particle.function("setIsAuto", setIsAuto);
   Particle.function("getDoorState", getDoorState);
@@ -56,13 +58,18 @@ void setup()
   mySupervisor.init();
 
   Serial.begin(9600);
+
+  // publish the RSSI signal strength on start and every x minutes after
+  publishRSSI();
+  sendRSSITimer.start();
 }
 
 void loop()
 {
+  //Serial.printf("Range = %f\n", inches);
   digitalWrite(STATUS_LED_PIN, status);
   //Serial.printf("Wifi RSSI = %d dB\n", WiFi.RSSI());
-  
+
   // run the state machines
   myDoor.runSM(&myFlags);
   mySupervisor.runSM(&myFlags);
@@ -229,4 +236,12 @@ void sendTrigger() {
   digitalWrite(SENSOR_TRIGGER_PIN, HIGH);
   delayMicroseconds(10); // Hold the trigger pin high for at least 10 us
   digitalWrite(SENSOR_TRIGGER_PIN, LOW);
+}
+
+/****************** util ******************/
+void publishRSSI() {
+  // send rssi value to the logs
+  char message[10];
+  sprintf(message, "RSSI =  %d dB\n", WiFi.RSSI());
+  Particle.publish("RSSI", message);
 }

@@ -9,7 +9,7 @@ SupervisorSM::SupervisorSM(int start, int end) {
 
 void SupervisorSM::init(){
     // initialize state
-    int hour = Time.hour();
+
     if(isDayTime()) {
         transitionTo(AUTO_OPEN);
     }else {
@@ -118,7 +118,7 @@ int SupervisorSM::getEndHour() {
 }
 
 bool SupervisorSM::isDayTime() {
-  return Time.hour() > startHour && Time.hour() < endHour;
+  return Time.hour() >= startHour && Time.hour() < endHour;
 }
 
 void SupervisorSM::setIsAuto(bool isauto) {

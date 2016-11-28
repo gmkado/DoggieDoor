@@ -45,11 +45,8 @@ void AutoCloseSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
     case WAITING_FOR_DOOR_OPEN:
       if (isEntry) {
         isEntry = false;
-        upperRelease = false; // this is just to test if the upper switch has been released, if we're coming from the corner case where we missed the lower switch on close
       }
-      if(!upperRelease && !flags->test(SWITCH_UPPER_FLAG)) { // this should normally happen immediately on entering, unless we're in the corner case
-        upperRelease = true;
-      } else if(upperRelease && flags->test(SWITCH_UPPER_FLAG)) { // door opened, so go to waiting for all clear
+      else if(flags->test(SWITCH_UPPER_FLAG)) { // door opened, so go to waiting for all clear
         transitionTo(WAITING_FOR_ALL_CLEAR);
       }
       break;
@@ -81,7 +78,7 @@ void AutoCloseSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
         transitionTo(WAITING_FOR_DOG);
       }else if(flags->test(SWITCH_UPPER_FLAG)) {
         transitionTo(WAITING_FOR_DOOR_OPEN);
-      }else if(flags->test(SWITCH_BUMPER_FLAG)) { //NOTE: this has to happen after checking for closed door, because a closed door will trigger the bumper...
+      }else if(flags->test(SWITCH_BUMPER_FLAG)) {
         transitionTo(WAITING_FOR_DOOR_OPEN); // don't worry about sending a door open command, that's handled by DoorSM
       }else if(flags->test(SENSOR_INRANGE_FLAG)) { // dog triggered sensor again, so go back to opening
         flags->set(COMMAND_OPEN_FLAG);

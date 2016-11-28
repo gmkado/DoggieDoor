@@ -51,21 +51,16 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
 
                 doorTimer->changePeriod(OPENING_TIME);
                 doorTimer->start();
-                upperRelease = false;
                 isEntry = false;
             }
-            if(!upperRelease && !flags->test(SWITCH_UPPER_FLAG)) {
-                // switch is released
-                upperRelease = true;
-            }
-            if(upperRelease && flags->test(SWITCH_UPPER_FLAG)) {
+            if(flags->test(SWITCH_UPPER_FLAG)) {
                 transitionTo(DOOR_OPEN);
             } else if(flags->test(COMMAND_CLOSE_FLAG)){ // close door command
                 transitionTo(DOOR_CLOSING);
             } else if(timeoutOccurred)  {
                 flags->set(FAULT_OPENING_FLAG); // report the timeout
                 timeoutOccurred = false; // clear flag
-                transitionTo(DOOR_OPENING);
+                transitionTo(DOOR_CLOSING);
             }
 
             if(isExit) {
@@ -95,20 +90,16 @@ void DoorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
 
                 doorTimer->changePeriod(CLOSING_TIME);
                 doorTimer->start();
-                upperRelease = false;
                 isEntry = false;
             }
             if(flags->test(SWITCH_LOWER_FLAG)) {
                 transitionTo(DOOR_CLOSED);
-            } if(!upperRelease && !flags->test(SWITCH_UPPER_FLAG)) {
-                // switch is released
-                upperRelease = true;
             }
-            else if (upperRelease && flags->test(SWITCH_UPPER_FLAG)){
+            /*else if (flags->test(SWITCH_UPPER_FLAG)){
                 // we missed the lower limit switch and got all the way back around to the upper limit switch, go back to door opening
                 flags->set(FAULT_MISSEDCLOSE_FLAG);
                 transitionTo(DOOR_OPENING);
-            }else if(flags->test(COMMAND_OPEN_FLAG)) { // open door command
+            }*/else if(flags->test(COMMAND_OPEN_FLAG)) { // open door command
                 transitionTo(DOOR_OPENING);
             }else if(flags->test(SWITCH_BUMPER_FLAG)) {
                 flags->set(FAULT_DOGSQUISHED_FLAG);
