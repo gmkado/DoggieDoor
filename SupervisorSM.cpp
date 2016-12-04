@@ -8,10 +8,12 @@ SupervisorSM::SupervisorSM(int start, int end) {
 }
 
 void SupervisorSM::init(){
-    // initialize state
+    // startup in auto mode
+    isAuto = true;
 
+    // initialize state
     if(isDayTime()) {
-        transitionTo(AUTO_OPEN);
+      transitionTo(AUTO_OPEN);
     }else {
       transitionTo(AUTO_CLOSED);
     }
@@ -19,8 +21,6 @@ void SupervisorSM::init(){
     // consume exit event so we don't do this the first time we enter runSM()
     isExit = false;
 
-    // default is auto mode
-    isAuto = true;
 
 }
 
@@ -64,8 +64,6 @@ void SupervisorSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
 
     // ensure that isExit is false, if there were exit actions they should have been resolved by here
     isExit = false;
-
-
 }
 
 
@@ -74,12 +72,16 @@ SupervisorState_t SupervisorSM::getState() {
 }
 
 void SupervisorSM::transitionTo(SupervisorState_t to) {
-    Serial.printf("SupervisorSM: Transitioning from %s to %s\n", SupervisorStateNames[currentState].c_str(), SupervisorStateNames[to].c_str());
+    char message[100];
+    sprintf(message, "SupervisorSM: Transitioning from %s to %s", SupervisorStateNames[currentState].c_str(), SupervisorStateNames[to].c_str());
+    Serial.println(message);
+    Particle.publish("Log", message);
+
     currentState = to;
     isEntry = true;
     isExit = true;
 
-    char publishString[10]; //TODO: is this a memory leak?
+    char publishString[10];
     sprintf(publishString, "%d", to);
     // publish the event
     Particle.publish("SupervisorState", publishString);

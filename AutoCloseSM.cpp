@@ -43,10 +43,7 @@ void AutoCloseSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
       }
       break;
     case WAITING_FOR_DOOR_OPEN:
-      if (isEntry) {
-        isEntry = false;
-      }
-      else if(flags->test(SWITCH_UPPER_FLAG)) { // door opened, so go to waiting for all clear
+      if(flags->test(SWITCH_UPPER_FLAG)) { // door opened, so go to waiting for all clear
         transitionTo(WAITING_FOR_ALL_CLEAR);
       }
       break;
@@ -77,7 +74,7 @@ void AutoCloseSM::runSM(std::bitset<SIZE_OF_FLAGS_ENUM> *flags) {
       if(flags->test(SWITCH_LOWER_FLAG)) {
         transitionTo(WAITING_FOR_DOG);
       }else if(flags->test(SWITCH_UPPER_FLAG)) {
-        transitionTo(WAITING_FOR_DOOR_OPEN);
+        //transitionTo(WAITING_FOR_DOOR_OPEN);
       }else if(flags->test(SWITCH_BUMPER_FLAG)) {
         transitionTo(WAITING_FOR_DOOR_OPEN); // don't worry about sending a door open command, that's handled by DoorSM
       }else if(flags->test(SENSOR_INRANGE_FLAG)) { // dog triggered sensor again, so go back to opening
@@ -101,7 +98,11 @@ AutoCloseState_t AutoCloseSM::getState() {
 }
 
 void AutoCloseSM::transitionTo(AutoCloseState_t to) {
-  Serial.printf("AutoCloseSM: Transitioning from %s to %s\n", AutoCloseStateNames[currentState].c_str(), AutoCloseStateNames[to].c_str());
+  char message[100];
+  sprintf(message, "AutoCloseSM: Transitioning from %s to %s", AutoCloseStateNames[currentState].c_str(), AutoCloseStateNames[to].c_str());
+  Serial.println(message);
+  Particle.publish("Log", message);
+
   currentState = to;
   isEntry = true;
   isExit = true;

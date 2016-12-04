@@ -3,23 +3,31 @@
 #include "AutoCloseSM.h"
 #include "FlagDefines.h"
 #include "PinDefines.h"
+#include "HX711.h"
 #include <bitset>
+
 std::bitset<SIZE_OF_FLAGS_ENUM> myFlags; // initialize all flags false
 
 const bool DEBUG = false;
-const unsigned int MAX_SENSOR_PULSEWIDTH = 23200;
-const unsigned int INRANGE_THRESH_INCHES = 20;
 bool status = false;
-unsigned long t1;
-unsigned long t2;
-unsigned long pulse_width;
-float inches;
+int calibration_factor = 23000;
 
-Timer sensorTriggerTimer(1000, sendTrigger, true);
+
+//const unsigned int MAX_SENSOR_PULSEWIDTH = 23200;
+//const unsigned int INRANGE_THRESH_INCHES = 20;
+
+//unsigned long t1;
+//unsigned long t2;
+//unsigned long pulse_width;
+//float inches;
+
+//Timer sensorTriggerTimer(1000, sendTrigger, true);
 Timer sendRSSITimer(15*60*1000, publishRSSI);
 DoorSM myDoor;
 SupervisorSM mySupervisor(6, 22); // default to start at 6AM, end at 10PM
 AutoCloseSM myAutoClose;
+
+HX711 *scale = NULL;
 
 void setup()
 {
@@ -35,29 +43,28 @@ void setup()
   pinMode(UPPER_LIMIT_PIN, INPUT);
   pinMode(LOWER_LIMIT_PIN, INPUT);
   pinMode(BUMPER_LIMIT_PIN, INPUT);
-  pinMode(SENSOR_TRIGGER_PIN, OUTPUT);
-  pinMode(SENSOR_ECHO_PIN, INPUT);
   pinMode(MOTOR_PWM_PIN, OUTPUT);
-  pinMode(MOTOR_OPEN_PIN, OUTPUT);
-  pinMode(MOTOR_CLOSE_PIN, OUTPUT);
+  pinMode(MOTOR_DIR1_PIN, OUTPUT);
+  pinMode(MOTOR_DIR2_PIN, OUTPUT);
   pinMode(STATUS_LED_PIN, OUTPUT);
 
+  Serial.begin(9600);
+
+
   // attach interrupts for sensor
-  attachInterrupt(SENSOR_ECHO_PIN, echoChange, CHANGE);
+/*  attachInterrupt(SENSOR_ECHO_PIN, echoChange, CHANGE);
   digitalWrite(SENSOR_TRIGGER_PIN, LOW);
-  sendTrigger(); // start the sensor
+  sendTrigger(); // start the sensor */
 
   digitalWrite(STATUS_LED_PIN, LOW);
 
-  if(!DEBUG) {
-    checkInputs(); // check all switches so we set the flags before we call init on statemachines
-  }
+  if(!DEBUG) checkInputs(); // check all switches so we set the flags before we call init on statemachines
 
   // initialize state machines
-  myDoor.init(&myFlags);
+  Particle.publish("Log", "************INITIALIZING DOOR ***************");
   mySupervisor.init();
+  myDoor.init(mySupervisor.getState(), &myFlags);
 
-  Serial.begin(9600);
 
   // publish the RSSI signal strength on start and every x minutes after
   publishRSSI();
@@ -66,15 +73,15 @@ void setup()
 
 void loop()
 {
-  //Serial.printf("Range = %f\n", inches);
   digitalWrite(STATUS_LED_PIN, status);
-  //Serial.printf("Wifi RSSI = %d dB\n", WiFi.RSSI());
+  myFlags.reset(SENSOR_INRANGE_FLAG); // TODO: For now, sensor is always low until we find a fix
 
   // run the state machines
   myDoor.runSM(&myFlags);
   mySupervisor.runSM(&myFlags);
+
   // Only run AutoClose state machine if supervisor is in the right state
-  if(mySupervisor.getState() == AUTO_CLOSED){
+   if(mySupervisor.getState() == AUTO_CLOSED){
     // Check if we need to initialize the state machine
     if(myFlags.test(INIT_AUTOCLOSE_FLAG)) {
       myAutoClose.init(myDoor.getState(), &myFlags);
@@ -85,98 +92,126 @@ void loop()
 
   // print out events and statements
   if(myFlags.test(EVENT_CLOSED_FLAG)) {
-    Serial.println("Main: Door closed event");
-    Particle.publish("Log", "Event: Door closed");
+    if(DEBUG) Serial.println("Main: Door closed event");
+
+    if(mySupervisor.getState() == MANUAL_MODE){
+      Particle.publish("Log", "Event: Door closed manually");
+    }else{
+      Particle.publish("Log", "Event: Door closed automatically");
+    }
     myFlags.reset(EVENT_CLOSED_FLAG);
   }
   if(myFlags.test(EVENT_OPENED_FLAG)) {
-    Serial.println("Main: Door open event");
-    Particle.publish("Log", "Event: Door open");
+    if(DEBUG) Serial.println("Main: Door open event");
+
+    switch(mySupervisor.getState()){
+      case MANUAL_MODE:
+        Particle.publish("Log", "Event: Door opened manually");
+        break;
+      case AUTO_OPEN:
+        Particle.publish("Log", "Event: Door opened automatically");
+        break;
+      case AUTO_CLOSED:
+        Particle.publish("Log", "Event: Door opened automatically");
+        Particle.publish("Error", "Door opened during autoclose");  // TODO: take this out when we fix sensor
+        break;
+    }
+
     myFlags.reset(EVENT_OPENED_FLAG);
   }
   if(myFlags.test(FAULT_OPENING_FLAG)) {
-    Serial.println("Main: Door opening fault");
+    if(DEBUG) Serial.println("Main: Door opening fault");
     Particle.publish("Log", "Fault: Door timed out on open");
     myFlags.reset(FAULT_OPENING_FLAG);
   }
   if(myFlags.test(FAULT_CLOSING_FLAG)) {
-    Serial.println("Main: Door closing timeout");
+    if(DEBUG) Serial.println("Main: Door closing timeout");
     Particle.publish("Log", "Fault: Door timed out on close");
     myFlags.reset(FAULT_CLOSING_FLAG);
   }
   if(myFlags.test(FAULT_MISSEDCLOSE_FLAG)) {
-    Serial.println("Main: Missed the lower limit switch during close");
+    if(DEBUG) Serial.println("Main: Missed the lower limit switch during close");
     Particle.publish("Log", "Fault: Missed the lower limit switch");
     myFlags.reset(FAULT_MISSEDCLOSE_FLAG);
   }
   if(myFlags.test(FAULT_DOGSQUISHED_FLAG)) {
-    Serial.println("Main: Dog squished");
+    if(DEBUG) Serial.println("Main: Dog squished");
     Particle.publish("Log", "Fault: Dog squished");
     myFlags.reset(FAULT_DOGSQUISHED_FLAG);
   }
-
-  if(!DEBUG) {
-    checkInputs(); // check inputs at end so that serial events override it
+  if(myFlags.test(FAULT_NO_RELEASE_ON_CLOSE_FLAG)) {
+    if(DEBUG) Serial.println("Main: Upper limit switch not released during open, possibly wrong direction.");
+    Particle.publish("Log", "Fault: Upper limit switch not released during open, possibly wrong direction.");
+    myFlags.reset(FAULT_NO_RELEASE_ON_CLOSE_FLAG);
   }
+  if(myFlags.test(FAULT_NONRECOVER_FLAG)) { // NOTE this fault goes last, no others will report after it since it enters a while(true) statement
+    // nonrecoverable error, caused by too many oscillations of the door
+    String message = "NONRECOVERABLE!!! Door tried to open and close too many times.  Check door and restart";
+    if(DEBUG) Serial.println("Main: Nonrecoverable, door tried to open and close too many times.  Check door and restart");
+    Particle.publish("Log", "Fault: NONRECOVERABLE!!! Door tried to open and close too many times.  Check door and restart");
+    Particle.publish("Error", "NONRECOVERABLE!!! Door tried to open and close too many times.  Check door and restart");  // TODO: take this out when we fix sensor
+    while(true) Particle.process(); // maintain cloud connection but don't allow any other commands
+  }
+
+  if(!DEBUG)checkInputs(); // check inputs at end so that serial events override it
+
 }
 
 void serialEvent()
 {
-  // this is called after loop() so we can change flags without worrying about "thread safety"
-  char c = Serial.read();
-  // this is just for debugging (i.e. stepping through code) so lets make sure we reset the sw at a time by resetting the switch flags
-  myFlags.reset(SWITCH_UPPER_FLAG);
-  myFlags.reset(SWITCH_LOWER_FLAG);
-  myFlags.reset(SWITCH_BUMPER_FLAG);
+  // only look at serial inputs if we're debugging
+  if(DEBUG) {
+    // this is called after loop() so we can change flags without worrying about "thread safety"
+    char c = Serial.read();
+    // this is just for debugging (i.e. stepping through code) so lets make sure we reset the sw at a time by resetting the switch flags
+    //myFlags.reset(SWITCH_UPPER_FLAG);
+    myFlags.reset(SWITCH_LOWER_FLAG);
+    myFlags.reset(SWITCH_BUMPER_FLAG);
 
-  switch(c) {
-    case 'u': // upper limit switch
-      myFlags.set(SWITCH_UPPER_FLAG);
+    switch(c) {
+      case 'u': // upper limit switch
+        myFlags.flip(SWITCH_UPPER_FLAG);
+        Serial.printf("Main: upper now set to %s\n", myFlags.test(SWITCH_UPPER_FLAG)?"true":"false");
+        break;
+      case 'l': // lower limit switch
+        myFlags.set(SWITCH_LOWER_FLAG);
+        break;
+      case 'b': // bumper limit switch
+        myFlags.set(SWITCH_BUMPER_FLAG);
+        break;
+      case 'p': //PIR sensor
+        myFlags.set(SENSOR_INRANGE_FLAG);
+        break;
+      case 'o': // open command
+        myFlags.set(COMMAND_OPEN_FLAG);
+        break;
+      case 'c': // closed command
+        myFlags.set(COMMAND_CLOSE_FLAG);
+        break;
+      case 'q': // query state:
+        Serial.printf("Door state: %s\n", DoorStateNames[myDoor.getState()].c_str());
+        Serial.printf("Supervisor state: %s\n", SupervisorStateNames[mySupervisor.getState()].c_str());
+        if(mySupervisor.getState() == AUTO_CLOSED) {
+          Serial.printf("AutoClose state: %s\n", AutoCloseStateNames[myAutoClose.getState()].c_str());
+        }
+        break;
+      case 's': // set start time
+        mySupervisor.setStartHour(Serial.parseInt());
+        break;
+      case 'e': // set end time
+        mySupervisor.setEndHour(Serial.parseInt());
+        break;
+      case 'm': // toggle manual mode
+        mySupervisor.setIsAuto(!mySupervisor.getIsAuto());
+        break;
+      case 'f': // print out bit from bitset
+        Serial.printf("Bitset = %s\n", myFlags.to_string().c_str());
+        break;
+      case ' ': // AUX
+        //Serial.printf("Current hour = %i, Start time = %i, End time = %i\n",Time.hour(), mySupervisor.getStartHour(), mySupervisor.getEndHour());
+        break;
       break;
-    case 'l': // lower limit switch
-      myFlags.set(SWITCH_LOWER_FLAG);
-      break;
-    case 'b': // bumper limit switch
-      myFlags.set(SWITCH_BUMPER_FLAG);
-      break;
-    case 'p': //PIR sensor
-      myFlags.set(SENSOR_INRANGE_FLAG);
-      break;
-    case 'o': // open command
-      myFlags.set(COMMAND_OPEN_FLAG);
-      break;
-    case 'c': // closed command
-      myFlags.set(COMMAND_CLOSE_FLAG);
-      break;
-    case 'q': // query state:
-      Serial.printf("Door state: %s\n", DoorStateNames[myDoor.getState()].c_str());
-      Serial.printf("Supervisor state: %s\n", SupervisorStateNames[mySupervisor.getState()].c_str());
-      if(mySupervisor.getState() == AUTO_CLOSED) {
-        Serial.printf("AutoClose state: %s\n", AutoCloseStateNames[myAutoClose.getState()].c_str());
-      }
-      break;
-    case 's': // set start time
-      mySupervisor.setStartHour(Serial.parseInt());
-      break;
-    case 'e': // set end time
-      mySupervisor.setEndHour(Serial.parseInt());
-      break;
-    case 'm': // toggle manual mode
-      mySupervisor.setIsAuto(!mySupervisor.getIsAuto());
-      break;
-    case 'f': // print out bit from bitset
-      Serial.printf("Bitset = %s\n", myFlags.to_string().c_str());
-      break;
-    case ' ': // AUX
-      //Serial.printf("Current hour = %i, Start time = %i, End time = %i\n",Time.hour(), mySupervisor.getStartHour(), mySupervisor.getEndHour());
-      if(pulse_width > MAX_SENSOR_PULSEWIDTH) {
-        Serial.println("Sensor OUT OF RANGE");
-      }else{
-        Serial.printf("Sensor value = %.1f inches\n", inches);
-      }
-      break;
-    break;
-
+    }
   }
 }
 
@@ -185,7 +220,8 @@ void checkInputs() {
   digitalRead(LOWER_LIMIT_PIN)?myFlags.set(SWITCH_LOWER_FLAG):myFlags.reset(SWITCH_LOWER_FLAG);
   digitalRead(UPPER_LIMIT_PIN)?myFlags.set(SWITCH_UPPER_FLAG):myFlags.reset(SWITCH_UPPER_FLAG);
   digitalRead(BUMPER_LIMIT_PIN)?myFlags.set(SWITCH_BUMPER_FLAG):myFlags.reset(SWITCH_BUMPER_FLAG);
-  //digitalRead(PIR_SENSOR_PIN)?myFlags.set(SENSOR_PIR_FLAG):myFlags.reset(SENSOR_PIR_FLAG);
+
+
 
 }
 
@@ -214,7 +250,7 @@ int getDoorState(String command) {
 }
 
 /**************** sensor interrupts ****************/
-void echoChange() {
+/*void echoChange() {
   if (digitalRead(SENSOR_ECHO_PIN)) {
     t1 = micros();
   }else{
@@ -236,7 +272,7 @@ void sendTrigger() {
   digitalWrite(SENSOR_TRIGGER_PIN, HIGH);
   delayMicroseconds(10); // Hold the trigger pin high for at least 10 us
   digitalWrite(SENSOR_TRIGGER_PIN, LOW);
-}
+}*/
 
 /****************** util ******************/
 void publishRSSI() {
